@@ -41,7 +41,7 @@ work, Q8_0 for near-lossless (only fits for models <= 8B on 24 GB).
 
 | | vLLM (pip) | vLLM (Docker) | llama.cpp (Docker) | llama.cpp (compile) |
 |---|---|---|---|---|
-| **Install** | `conda run -n torch pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/` | `docker pull rocm/vllm-dev:navi_nightly` | `docker pull ghcr.io/ggml-org/llama.cpp:full-rocm` | cmake build, ~10 min |
+| **Install** | TheRock wheel stack (see `install-rocm-rdna-stack`): torch[device-gfx1100] 2.11+rocm7.14, flash-attn 2.8.3, vLLM 0.23.1+rocm7.14 via uv | `docker pull rocm/vllm-dev:navi_nightly` | `docker pull ghcr.io/ggml-org/llama.cpp:full-rocm` | cmake build, ~10 min |
 | **Weights** | safetensors (HF) | safetensors (HF) | GGUF | GGUF |
 | **Quantization** | FP16/BF16 only (FP8 experimental) | same | Q4_K_M etc. | same |
 | **Max model (24 GB)** | ~8B FP16 | ~8B FP16 | ~14B Q4_K_M | ~14B Q4_K_M |
@@ -89,28 +89,47 @@ Also recommended: `--enforce-eager` (skip HIP graph capture, which can
 OOM on 24 GB when the model uses most of VRAM — eager mode is ~10%
 slower but far more reliable).
 
-### pip install
+### pip install (preferred: TheRock ROCm 7.14 wheel stack)
+
+The recommended pip path is the AMD "virtual-environment ROCm" wheel
+stack — see `install-rocm-rdna-stack` for the complete flow. Summary:
 
 ```bash
-conda activate torch
+# Python 3.14 venv or conda env
+python -m pip install --index-url https://repo.amd.com/rocm/whl-multi-arch/ \
+    "torch[device-gfx1100]==2.11.0+rocm7.14.0" \
+    "torchvision[device-gfx1100]==0.26.0+rocm7.14.0" "torchaudio==2.11.0+rocm7.14.0"
+python -m pip install https://rocm.frameworks.amd.com/whl-multi-arch/vllm-rdna/flash-attn/flash_attn-2.8.3-py3-none-any.whl
+uv pip install https://rocm.frameworks.amd.com/whl-multi-arch/vllm-rdna/vllm/vllm-0.23.1.dev1%2Brocm7.14.0.g9ddef7117.d20260715-cp314-cp314-linux_x86_64.whl
+
+# Mandatory exports before every use
+export PYTHONPATH=$VIRTUAL_ENV/lib/python3.14/site-packages/_rocm_sdk_core/share/amd_smi
+export FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE
+```
+
+- `torch[device-gfx1100]` pulls the whole TheRock ROCm SDK as pip
+  wheels (`rocm-sdk-core`, `rocm-sdk-libraries`) — **no system ROCm
+  install needed**.
+- The vLLM wheel install MUST use `uv pip install`, not pip: pip
+  rejects the `amd-quark>=0.8.99` dependency on Python 3.14 (wrong
+  `Requires-Python` metadata upstream); uv resolves it anyway. See
+  `install-rocm-rdna-stack` reference.md for a pip `--no-deps`
+  workaround.
+- In this stack `vllm serve` IS on PATH — no module-form fallback
+  needed. Verified on RX 7900 XTX: Qwen2.5-7B-Instruct, flash-attn
+  active, ~53 tok/s at 8K context.
+
+### pip install (legacy: wheels.vllm.ai, Python 3.12)
+
+Older community wheels live on `wheels.vllm.ai` and are **cp312-only**:
+
+```bash
+conda create -n vllm python=3.12 && conda activate vllm
 pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
 ```
 
-Version-pinned install:
-```bash
-pip install vllm==0.18.0+rocm721 --extra-index-url https://wheels.vllm.ai/rocm/0.18.0/rocm721
-```
-
-If the installed vLLM is built for an older torch, `pip install` will try
-to downgrade torch — that is fine as long as the ROCm torch index is
-used. Do **not** mix with the CUDA torch wheel.
-
-CLI note: `vllm serve` may not be on PATH in a pip install. Use the
-module form:
-
-```bash
-python -m vllm.entrypoints.openai.api_server --model <id> --port 8000 ...
-```
+Prefer the TheRock stack above; the legacy wheels have no flash-attn
+RDNA wheel pairing and are more fragile (see the ABI known-issue row).
 
 ### Docker
 
@@ -222,7 +241,7 @@ Quantization sizing (24 GB, llama.cpp): 14B Q4_K_M ≈ 8 GB weights →
 | `HSA_STATUS_ERROR_INVALID_AGENT` / "No agents found" | Missing HSA_OVERRIDE_GFX_VERSION | `export HSA_OVERRIDE_GFX_VERSION=11.0.0` |
 | vLLM crashes at startup on RDNA | AITER kernels targeting CDNA | `export VLLM_ROCM_USE_AITER=0` |
 | OOM during vLLM startup on a model that should fit | HIP graph capture peak | `--enforce-eager` |
-| vLLM pip: `undefined symbol: _ZN3c103hip19getCurrentHIPStreamEa` warnings followed by `AttributeError: '_C' object has no attribute 'rms_norm'` and `EngineCore failed to start` | **Fatal ABI mismatch** — vLLM wheel built for a different Python (cp312 wheel force-installed into cp310) and/or different ROCm series (rocm700 wheel with torch rocm7.2). The `_C` extension never loads, so core kernels are missing. | Install a wheel matching your Python and ROCm. Best path: fresh conda env with **Python 3.12** (`conda create -n vllm python=3.12`) then `pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/` (ROCm wheels on wheels.vllm.ai are cp312-only). Or use the Docker backend. |
+| vLLM pip: `undefined symbol: _ZN3c103hip19getCurrentHIPStreamEa` warnings followed by `AttributeError: '_C' object has no attribute 'rms_norm'` and `EngineCore failed to start` | **Fatal ABI mismatch** — vLLM wheel built for a different Python (e.g. cp312 wheel force-installed into a cp310 env) and/or a different ROCm series (rocm700 wheel with torch rocm7.2). The `_C` extension never loads, so core kernels are missing. | Install a matching stack. Best path: the TheRock wheel stack (Python 3.14, torch 2.11+rocm7.14, vLLM 0.23.1+rocm7.14 — see `install-rocm-rdna-stack`). If stuck with legacy wheels.vllm.ai wheels, they are cp312-only: `conda create -n vllm python=3.12`. Or use the Docker backend. |
 | vLLM Docker: MoE model (gpt-oss-20b) crashes with `TritonAMDGPUToLLVM/MFMA.cpp:869: Assertion ... DotOperand layout` during startup | vLLM's Triton MoE kernels (conch-triton-kernels) target MFMA, which is CDNA-only. RDNA has no MFMA instructions. Dense models are unaffected. | Serve MoE models with **llama.cpp** (GGUF) instead. Dense models (Llama-3-8B etc.) work fine in vLLM. |
 | vLLM logs `Repo id must be in the form 'repo_name' or 'namespace/repo_name'` when `--model` is a local path | vLLM 0.11.x dev bug: safetensors-metadata lookup passes local paths to the HF API | **Non-fatal** — caught and ignored. Proceeds with local loading. |
 | llama.cpp Docker: `cudaMalloc failed: out of memory` at model load | Another service (e.g. vLLM) already holds most of the 24 GB VRAM. 24 GB is too small for two models. | Run one serving process at a time. Check `rocm-smi --showmeminfo vram`. |
@@ -232,8 +251,14 @@ Quantization sizing (24 GB, llama.cpp): 14B Q4_K_M ≈ 8 GB weights →
 | Docker can't see GPU | Missing --device or group perms | `--device /dev/kfd --device /dev/dri --group-add=video`; user in video/render group |
 | `CUDA_VISIBLE_DEVICES=''` | Hides all GPUs from ROCm runtime | `unset CUDA_VISIBLE_DEVICES` |
 
-### Verified on RX 7900 XTX (ROCm 7.2.4, July 2026)
+### Verified on RX 7900 XTX
 
+TheRock wheel stack (ROCm 7.14, Aug 2026):
+- vLLM pip (`vllm serve`) + Qwen2.5-7B-Instruct from local HF cache:
+  clean startup (no ABI warnings), flash-attn active (ROCM_ATTN),
+  ~53 tok/s at 8K context, 23.2 GB VRAM used.
+
+Legacy Docker path (ROCm 7.2.4, July 2026):
 - vLLM Docker + dense model (Meta-Llama-3-8B-Instruct, local safetensors):
   loads, serves, responds. Health OK.
 - llama.cpp Docker (`rocm/llama.cpp:..._server`) + Qwen2.5-7B-Instruct-Q4_K_M

@@ -81,11 +81,20 @@ Rules:
 Present the available backends to the user in this order, recommending
 the first that is available:
 
-1. **vllm-pip** — already installed in the conda `torch` env on most
-   setups; no new install needed
+1. **vllm-pip** — the AMD TheRock wheel stack (ROCm 7.14 + PyTorch +
+   vLLM as pip wheels, Python 3.14). Installed via
+   `install-rocm-rdna-stack`. The preferred backend: no Docker, full
+   flash-attn support, fastest iteration.
 2. **llama-cpp-compile** — only ~10 min build, no huge image downloads
 3. **vllm-docker** — reproducible but ~16 GB image
 4. **llama-cpp-docker** — lightweight (~2-3 GB image)
+
+The vllm-pip backend needs the two environment variables from
+`install-rocm-rdna-stack` Step 5 (PYTHONPATH for the amd_smi bindings,
+FLASH_ATTENTION_TRITON_AMD_ENABLE for flash-attn on RDNA). Validate
+with `scripts/validate.py --backend vllm-pip` — it reports the conda
+env (rocm7.14 preferred, `torch` fallback) and checks the vLLM wheel /
+Python ABI match.
 
 If the user only wants "run a model quickly" without an endpoint, suggest
 Ollama (see reference.md) instead — this skill is for explicit vLLM /
@@ -167,29 +176,33 @@ defaults, HSA override, docker flags). The two env vars below are
 **mandatory** on RDNA. Substitute `<ctx>` with the confirmed context
 length and `<port>` with the confirmed port (default 8000).
 
-#### vllm-pip (conda env)
+#### vllm-pip (conda env — TheRock ROCm wheel stack)
 
 ```bash
-conda activate torch
-HSA_OVERRIDE_GFX_VERSION=<override> VLLM_ROCM_USE_AITER=0 \
-python -m vllm.entrypoints.openai.api_server \
-  --model <model-id> \
+conda activate <rocm-env>        # rocm7.14 (Python 3.14, vLLM 0.23.1.dev1+rocm7.14.0)
+export PYTHONPATH=<env>/lib/python3.14/site-packages/_rocm_sdk_core/share/amd_smi
+export FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE
+
+vllm serve <model-id> \
   --port <port> \
   --gpu-memory-utilization 0.9 \
-  --max-model-len <ctx> \
-  --enforce-eager
+  --max-model-len <ctx>
 ```
 
-(Use `python -m vllm.entrypoints.openai.api_server`, not `vllm serve` —
-the CLI entry point is often missing in pip installs.)
+The two exports are **mandatory** (from `install-rocm-rdna-stack`
+Step 5): `PYTHONPATH` adds the amd_smi bindings shipped in the TheRock
+SDK wheel; `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE` enables flash-attn
+on RDNA. Without them, import fails or flash-attn is unavailable.
 
-> **pip install prerequisite**: ROCm vLLM wheels on wheels.vllm.ai are
-> **Python 3.12 only** (`cp312`). If your conda env is not 3.12, the
-> wheel will fail with ABI errors at startup (`'_C' object has no
-> attribute 'rms_norm'`). Create a fresh env:
-> `conda create -n vllm python=3.12 && conda activate vllm && pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/`
-> and make sure the installed wheel's ROCm series (rocm721 etc.) matches
-> your torch (check `pip show torch` → `+rocm7.2`).
+This stack was verified on RX 7900 XTX: Qwen2.5-7B-Instruct serves with
+`vllm serve`, no ABI warnings, flash-attn active, ~53 tok/s at 8K
+context. Note `vllm serve` IS on PATH in this stack (unlike older pip
+installs where `python -m vllm.entrypoints.openai.api_server` was the
+fallback).
+
+For a different gfx target or fresh install, see
+`install-rocm-rdna-stack` for the exact wheel URLs (the
+`torch[device-gfxXXXX]` extra, flash-attn wheel, vLLM wheel).
 
 #### vllm-docker
 

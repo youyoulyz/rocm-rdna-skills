@@ -34,7 +34,19 @@ import shutil
 import subprocess
 import sys
 
-CONDA_ENV = "torch"
+# Preferred conda envs for the vllm-pip backend, in order. rocm7.14 is
+# the TheRock ROCm wheel stack (Python 3.14); "torch" is the legacy env.
+PREFERRED_ENVS = ["rocm7.14", "torch"]
+
+
+def _detect_conda_env():
+    """Find the first usable conda env, or return the first in the list."""
+    rc, out, _ = _run("conda env list 2>/dev/null | awk '{print $1}'")
+    available = set(out.split()) if rc == 0 else set()
+    for name in PREFERRED_ENVS:
+        if name in available:
+            return name
+    return PREFERRED_ENVS[0]
 
 
 def _run(cmd, timeout=30):
@@ -215,6 +227,28 @@ def check_vllm_pip(issues):
                 "message": f"vLLM wheel Python ({wheel_py[0]}.{wheel_py[1]}) matches env Python. OK.",
                 "fix": "",
             })
+
+
+def check_rocm_env_vars(issues):
+    """Check the mandatory exports for the TheRock ROCm wheel stack."""
+    pyp = os.environ.get("PYTHONPATH", "")
+    flash = os.environ.get("FLASH_ATTENTION_TRITON_AMD_ENABLE", "")
+    if "amd_smi" not in pyp:
+        issues.append({
+            "check": "rocm_pythonpath", "severity": "error",
+            "message": (
+                "PYTHONPATH does not include the amd_smi bindings. The TheRock "
+                "ROCm wheel stack needs: "
+                "export PYTHONPATH=$CONDA_PREFIX/lib/python3.14/site-packages/_rocm_sdk_core/share/amd_smi"
+            ),
+            "fix": "export PYTHONPATH=$CONDA_PREFIX/lib/python3.14/site-packages/_rocm_sdk_core/share/amd_smi",
+        })
+    if flash != "TRUE":
+        issues.append({
+            "check": "flash_triton", "severity": "error",
+            "message": "FLASH_ATTENTION_TRITON_AMD_ENABLE is not TRUE. flash-attn is unavailable on RDNA without it.",
+            "fix": "export FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE",
+        })
 
 
 def check_torch_rocm(issues):
@@ -422,9 +456,14 @@ def main():
     p.add_argument("--backend", default="auto",
                    choices=["auto", "vllm-pip", "vllm-docker", "llama-cpp-docker", "llama-cpp-compile"],
                    help="Which backend to validate (default: all)")
+    p.add_argument("--conda-env", default="",
+                   help="Conda env to check for vllm-pip (default: rocm7.14, then torch)")
     p.add_argument("--auto-fix", action="store_true", help="Apply safe fixes without prompting")
     p.add_argument("--json", action="store_true", help="Emit JSON instead of human text")
     args = p.parse_args()
+
+    global CONDA_ENV
+    CONDA_ENV = args.conda_env or _detect_conda_env()
 
     if args.backend == "auto":
         backends = ["vllm-pip", "vllm-docker", "llama-cpp-docker", "llama-cpp-compile"]
@@ -447,6 +486,7 @@ def main():
     check_conda(issues, backends)
     check_conda_env(issues, backends)
     if "vllm-pip" in backends:
+        check_rocm_env_vars(issues)
         check_vllm_pip(issues)
         check_torch_rocm(issues)
     check_docker(issues, backends)
@@ -462,7 +502,8 @@ def main():
     # Per-backend readiness (errors specific to a backend block it; common errors block all)
     common_blocks = {"dev_kfd", "dev_dri", "cuda_visible_devices"}
     backend_map = {
-        "vllm-pip": {"conda_env", "vllm_pip", "torch_rocm", "vllm_abi"},
+        "vllm-pip": {"conda_env", "vllm_pip", "torch_rocm", "vllm_abi",
+                     "rocm_pythonpath", "flash_triton"},
         "vllm-docker": {"docker", "docker_gpu", "vllm-docker_image"},
         "llama-cpp-docker": {"docker", "docker_gpu", "llama-cpp-docker_image"},
         "llama-cpp-compile": {"build_cmake", "build_hipcc", "build_git", "build_clang"},
@@ -477,6 +518,7 @@ def main():
     result = {
         "ready": ready,
         "backends_available": backend_ready,
+        "conda_env": CONDA_ENV,
         "errors": errors,
         "warnings": warnings,
         "advisories": advisories,
