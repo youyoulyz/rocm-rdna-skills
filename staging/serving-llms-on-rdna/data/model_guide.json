@@ -1,0 +1,229 @@
+{
+  "_description": "Curated model recommendations for 24 GB RDNA GPUs (RX 7900 XTX). Used by serving-llms-on-rdna skill for recommendations. Update manually as new models release.",
+  "_updated": "2026-07-31",
+  "default_model": "Qwen/Qwen3-8B",
+  "models": [
+    {
+      "hf_id": "Qwen/Qwen3-8B",
+      "parameter_count": "8B",
+      "architecture": "dense",
+      "size_gb_fp16": 15.2,
+      "size_gb_q4km": 5.2,
+      "max_seq_len": 131072,
+      "license": "Apache 2.0",
+      "gated": false,
+      "backends": ["vllm-pip", "vllm-docker", "llama-cpp-docker", "llama-cpp-compile"],
+      "recommended": true,
+      "default_model": true,
+      "notes": "Best all-rounder for 24 GB. Fits at FP16 with ~24K context (vLLM) or full 128K (Q4_K_M llama.cpp). Strong reasoning, tool-calling, multilingual. Apache 2.0, no token required."
+    },
+    {
+      "hf_id": "Qwen/Qwen3-14B",
+      "parameter_count": "14B",
+      "architecture": "dense",
+      "size_gb_fp16": 27.9,
+      "size_gb_q4km": 8.8,
+      "max_seq_len": 131072,
+      "license": "Apache 2.0",
+      "gated": false,
+      "backends": ["llama-cpp-docker", "llama-cpp-compile"],
+      "recommended": true,
+      "notes": "Best quality model that fits RDNA. Too large for FP16 on 24 GB — Q4_K_M fits easily (8.8 GB) with plenty of KV room. vLLM FP16 won't fit; llama.cpp with quantization is the way."
+    },
+    {
+      "hf_id": "meta-llama/Meta-Llama-3-8B-Instruct",
+      "parameter_count": "8B",
+      "architecture": "dense",
+      "size_gb_fp16": 16.0,
+      "size_gb_q4km": 5.0,
+      "max_seq_len": 8192,
+      "license": "Llama 3 Community",
+      "gated": true,
+      "backends": ["vllm-pip", "vllm-docker", "llama-cpp-docker", "llama-cpp-compile"],
+      "recommended": true,
+      "notes": "Verified on RDNA (vLLM Docker, local safetensors): loads and serves with ~4K-8K context at FP16. Gated on HF but local weights work without token."
+    },
+    {
+      "hf_id": "Qwen/Qwen2.5-7B-Instruct",
+      "parameter_count": "7.6B",
+      "architecture": "dense",
+      "size_gb_fp16": 15.0,
+      "size_gb_q4km": 4.4,
+      "max_seq_len": 32768,
+      "license": "Apache 2.0",
+      "gated": false,
+      "backends": ["llama-cpp-docker", "llama-cpp-compile", "vllm-pip", "vllm-docker"],
+      "recommended": true,
+      "notes": "Verified on RDNA (llama.cpp Docker AND local compile, Q4_K_M GGUF): fast, reliable, GPU offload works."
+    },
+    {
+      "hf_id": "openai/gpt-oss-20b",
+      "parameter_count": "20B (3.6B active)",
+      "architecture": "moe",
+      "size_gb_fp16": 12.7,
+      "size_gb_q4km": 11.0,
+      "max_seq_len": 131072,
+      "license": "Apache 2.0",
+      "gated": false,
+      "backends": ["llama-cpp-docker", "llama-cpp-compile"],
+      "recommended": true,
+      "moe": true,
+      "notes": "MoE: vLLM crashes on RDNA (Triton MFMA kernels are CDNA-only). Use llama.cpp with the Q4_K_M GGUF. Verified: safetensors load fails in vLLM Docker."
+    },
+    {
+      "hf_id": "Qwen/Qwen3.6-35B-A3B",
+      "parameter_count": "35B (3B active)",
+      "architecture": "moe",
+      "size_gb_fp16": 66.0,
+      "size_gb_q4km": 21.0,
+      "max_seq_len": 131072,
+      "license": "Apache 2.0",
+      "gated": false,
+      "backends": ["llama-cpp-docker", "llama-cpp-compile"],
+      "recommended": false,
+      "moe": true,
+      "notes": "MoE, 21 GB Q4_K_M — fits but leaves only ~1-2 GB KV headroom. Short context only. MTP variant (Q3_K_XL, 17 GB) leaves more room."
+    },
+    {
+      "hf_id": "Qwen/Qwen3-4B",
+      "parameter_count": "4B",
+      "architecture": "dense",
+      "size_gb_fp16": 7.6,
+      "size_gb_q4km": 2.8,
+      "max_seq_len": 131072,
+      "license": "Apache 2.0",
+      "gated": false,
+      "backends": ["vllm-pip", "vllm-docker", "llama-cpp-docker", "llama-cpp-compile"],
+      "recommended": false,
+      "notes": "Fits easily at FP16 with full 128K context. Good for high-throughput or long-context tasks. Less capable than 8B/14B."
+    },
+    {
+      "hf_id": "Qwen/Qwen3-32B",
+      "parameter_count": "32B",
+      "architecture": "dense",
+      "size_gb_fp16": 63.8,
+      "size_gb_q4km": 20.1,
+      "max_seq_len": 131072,
+      "license": "Apache 2.0",
+      "gated": false,
+      "backends": ["llama-cpp-docker", "llama-cpp-compile"],
+      "recommended": false,
+      "notes": "Q4_K_M at 20.1 GB leaves only ~1.5 GB for KV cache — short context only (~2-4K tokens). IQ4_XS gives slightly more room. 14B Q4_K_M is the practical ceiling for comfortable context."
+    },
+    {
+      "hf_id": "deepseek-ai/DeepSeek-R1-Distill-Qwen-8B",
+      "parameter_count": "8B",
+      "architecture": "dense",
+      "size_gb_fp16": 15.2,
+      "size_gb_q4km": 5.2,
+      "max_seq_len": 131072,
+      "license": "MIT",
+      "gated": false,
+      "backends": ["vllm-pip", "vllm-docker", "llama-cpp-docker", "llama-cpp-compile"],
+      "recommended": false,
+      "reasoning": true,
+      "notes": "Distilled reasoning model. Same memory footprint as Qwen3-8B. MIT license."
+    },
+    {
+      "hf_id": "meta-llama/Llama-3.1-8B-Instruct",
+      "parameter_count": "8B",
+      "architecture": "dense",
+      "size_gb_fp16": 15.0,
+      "size_gb_q4km": 5.0,
+      "max_seq_len": 131072,
+      "license": "Llama 3.1 Community",
+      "gated": true,
+      "backends": ["vllm-pip", "vllm-docker", "llama-cpp-docker", "llama-cpp-compile"],
+      "recommended": false,
+      "notes": "Solid 8B option. Requires HF token + license acceptance."
+    },
+    {
+      "hf_id": "meta-llama/Llama-3.2-3B-Instruct",
+      "parameter_count": "3B",
+      "architecture": "dense",
+      "size_gb_fp16": 6.0,
+      "size_gb_q4km": 2.2,
+      "max_seq_len": 131072,
+      "license": "Llama 3.2 Community",
+      "gated": true,
+      "backends": ["vllm-pip", "vllm-docker", "llama-cpp-docker", "llama-cpp-compile"],
+      "recommended": false,
+      "notes": "Lightweight and fast. Requires HF token + license acceptance."
+    },
+    {
+      "hf_id": "google/gemma-3-12b-it",
+      "parameter_count": "12B",
+      "architecture": "dense",
+      "size_gb_fp16": 24.0,
+      "size_gb_q4km": 7.8,
+      "max_seq_len": 131072,
+      "license": "Gemma",
+      "gated": true,
+      "backends": ["llama-cpp-docker", "llama-cpp-compile"],
+      "recommended": false,
+      "notes": "FP16 fills the entire VRAM — no room for KV cache. Q4_K_M fits well. Requires HF token + license acceptance."
+    },
+    {
+      "hf_id": "microsoft/Phi-4-mini-instruct",
+      "parameter_count": "3.8B",
+      "architecture": "dense",
+      "size_gb_fp16": 7.6,
+      "size_gb_q4km": 2.8,
+      "max_seq_len": 131072,
+      "license": "MIT",
+      "gated": false,
+      "backends": ["vllm-pip", "vllm-docker", "llama-cpp-docker", "llama-cpp-compile"],
+      "recommended": false,
+      "notes": "Compact, MIT license, strong for its size. Good for resource-constrained serving."
+    },
+    {
+      "hf_id": "Qwen/Qwen2.5-VL-7B-Instruct",
+      "parameter_count": "7.6B",
+      "architecture": "multimodal",
+      "size_gb_fp16": 18.0,
+      "size_gb_q4km": 6.5,
+      "max_seq_len": 32768,
+      "license": "Apache 2.0",
+      "gated": false,
+      "backends": ["vllm-pip", "vllm-docker"],
+      "recommended": false,
+      "notes": "Vision-language model. vLLM only (llama.cpp VLM support is weaker). 18 GB FP16 fits with ~2K context; use Q4 or lower context for comfort."
+    }
+  ],
+  "will_not_fit": {
+    "_comment": "Models that exceed 24 GB even at Q4_K_M. Reference to preempt user requests.",
+    "models": [
+      {
+        "hf_id": "Qwen/Qwen3-72B",
+        "size_gb_fp16": 144,
+        "size_gb_q4km": 43,
+        "reason": "72B Q4_K_M at ~43 GB exceeds 24 GB VRAM by ~19 GB. CPU offload or MoE variants only."
+      },
+      {
+        "hf_id": "meta-llama/Llama-3.3-70B-Instruct",
+        "size_gb_fp16": 140,
+        "size_gb_q4km": 42,
+        "reason": "70B class model, too large for 24 GB."
+      },
+      {
+        "hf_id": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+        "size_gb_fp16": 140,
+        "size_gb_q4km": 42,
+        "reason": "70B class model, too large for 24 GB."
+      },
+      {
+        "hf_id": "deepseek-ai/DeepSeek-V3",
+        "size_gb_fp16": 600,
+        "size_gb_q4km": 180,
+        "reason": "671B MoE — requires multi-GPU or massive CPU offload. Not feasible on single 24 GB card."
+      }
+    ]
+  },
+  "quantization_guide": {
+    "Q4_K_M": {"bits_per_param": 4.5, "recommended": true, "notes": "Best default for quality/speed on RDNA3. 14B fits comfortably."},
+    "IQ4_XS": {"bits_per_param": 4.25, "recommended": true, "notes": "Slightly smaller than Q4_K_M, near-identical quality. Good when VRAM is tight."},
+    "Q5_K_M": {"bits_per_param": 5.5, "recommended": false, "notes": "Better quality than Q4, but 14B is 10.8 GB — leaves less KV room."},
+    "Q8_0": {"bits_per_param": 8.5, "recommended": false, "notes": "Near-lossless. 14B at 16.7 GB leaves little KV headroom."},
+    "FP16": {"bits_per_param": 16, "recommended": false, "notes": "Full precision. Only for models <= 8B on 24 GB."}
+  }
+}

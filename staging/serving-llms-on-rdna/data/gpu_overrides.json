@@ -1,0 +1,215 @@
+{
+  "_description": "GPU configurations for AMD RDNA consumer GPUs. Used by serving-llms-on-rdna skill.",
+
+  "docker_flags": {
+    "vllm": [
+      "--device /dev/kfd",
+      "--device /dev/dri",
+      "--group-add=video",
+      "--cap-add=SYS_PTRACE",
+      "--security-opt seccomp=unconfined",
+      "--ipc=host"
+    ],
+    "llama_cpp": [
+      "--device /dev/kfd",
+      "--device /dev/dri",
+      "--group-add=video",
+      "--cap-add=SYS_PTRACE",
+      "--security-opt seccomp=unconfined",
+      "--ipc=host"
+    ]
+  },
+
+  "docker_images": {
+    "vllm_rocm": "rocm/vllm-dev:navi_nightly",
+    "vllm_rocm_alt": "vllm/vllm-openai-rocm:latest",
+    "llama_cpp_rocm": "ghcr.io/ggml-org/llama.cpp:full-rocm",
+    "llama_cpp_amd": "rocm/llama.cpp:latest",
+    "rocm_base": "rocm/dev-ubuntu-22.04:latest"
+  },
+
+  "gpu_configs": {
+    "gfx1100": {
+      "market_name": "Radeon RX 7900 XTX",
+      "architecture": "RDNA 3",
+      "vram_gb": 24,
+      "vram_type": "GDDR6",
+      "compute_units": 96,
+      "hsa_override": "11.0.0",
+      "gfx_target": "gfx1100",
+      "env_defaults": {
+        "HSA_OVERRIDE_GFX_VERSION": "11.0.0",
+        "VLLM_ROCM_USE_AITER": "0"
+      },
+      "precision": {
+        "native": ["bf16", "fp16", "int8"],
+        "emulated": ["fp8"],
+        "unsupported": ["mxfp4", "mxfp6", "nvfp4"],
+        "notes": "FP8 compute is emulated (dequant to FP16 during matmul). No MXFP4/MXFP6 or NVFP4 support. For llama.cpp, IQ4_XS and Q4_K_M provide best speed/quality trade-off."
+      },
+      "workarounds": [
+        {"id": "rdna-hsa-override", "desc": "HSA_OVERRIDE_GFX_VERSION=11.0.0 required for ROCm compute on RDNA3 consumer GPUs."},
+        {"id": "rdna-no-aiter", "desc": "VLLM_ROCM_USE_AITER=0 mandatory. AITER optimizations target CDNA only and crash on RDNA."}
+      ],
+      "vllm_extra_args": ["--enforce-eager"],
+      "vllm_extra_env": {
+        "VLLM_ROCM_USE_AITER": "0",
+        "HSA_OVERRIDE_GFX_VERSION": "11.0.0"
+      },
+      "vllm_support": "full",
+      "llama_cpp_build_flags": {
+        "cmake_targets": "gfx1100",
+        "rocwmma_fattn": true
+      }
+    },
+
+    "gfx1101": {
+      "market_name": "Radeon RX 7900 XT",
+      "architecture": "RDNA 3",
+      "vram_gb": 20,
+      "vram_type": "GDDR6",
+      "compute_units": 84,
+      "hsa_override": "11.0.0",
+      "gfx_target": "gfx1101",
+      "env_defaults": {
+        "HSA_OVERRIDE_GFX_VERSION": "11.0.0",
+        "VLLM_ROCM_USE_AITER": "0"
+      },
+      "precision": {
+        "native": ["bf16", "fp16", "int8"],
+        "emulated": ["fp8"],
+        "unsupported": ["mxfp4", "mxfp6", "nvfp4"]
+      },
+      "workarounds": [
+        {"id": "rdna-hsa-override", "desc": "HSA_OVERRIDE_GFX_VERSION=11.0.0 required."},
+        {"id": "rdna-no-aiter", "desc": "VLLM_ROCM_USE_AITER=0 mandatory on RDNA."}
+      ],
+      "vllm_extra_args": ["--enforce-eager"],
+      "vllm_extra_env": {
+        "VLLM_ROCM_USE_AITER": "0",
+        "HSA_OVERRIDE_GFX_VERSION": "11.0.0"
+      },
+      "vllm_support": "full",
+      "llama_cpp_build_flags": {
+        "cmake_targets": "gfx1101",
+        "rocwmma_fattn": true
+      }
+    },
+
+    "gfx1102": {
+      "market_name": "Radeon RX 7800 XT / 7900 GRE",
+      "architecture": "RDNA 3",
+      "vram_gb": 16,
+      "vram_type": "GDDR6",
+      "compute_units": 60,
+      "hsa_override": "11.0.0",
+      "gfx_target": "gfx1102",
+      "env_defaults": {
+        "HSA_OVERRIDE_GFX_VERSION": "11.0.0",
+        "VLLM_ROCM_USE_AITER": "0"
+      },
+      "precision": {
+        "native": ["bf16", "fp16", "int8"],
+        "emulated": ["fp8"],
+        "unsupported": ["mxfp4", "mxfp6", "nvfp4"]
+      },
+      "workarounds": [
+        {"id": "rdna-hsa-override", "desc": "HSA_OVERRIDE_GFX_VERSION=11.0.0 required."},
+        {"id": "rdna-no-aiter", "desc": "VLLM_ROCM_USE_AITER=0 mandatory on RDNA."}
+      ],
+      "vllm_extra_args": ["--enforce-eager"],
+      "vllm_extra_env": {
+        "VLLM_ROCM_USE_AITER": "0",
+        "HSA_OVERRIDE_GFX_VERSION": "11.0.0"
+      },
+      "vllm_support": "full",
+      "llama_cpp_build_flags": {
+        "cmake_targets": "gfx1102",
+        "rocwmma_fattn": true
+      }
+    },
+
+    "gfx1030": {
+      "market_name": "Radeon RX 6900 XT / 6800 XT / 6950 XT",
+      "architecture": "RDNA 2",
+      "vram_gb": 16,
+      "vram_type": "GDDR6",
+      "compute_units": 80,
+      "hsa_override": "10.3.0",
+      "gfx_target": "gfx1030",
+      "env_defaults": {
+        "HSA_OVERRIDE_GFX_VERSION": "10.3.0",
+        "VLLM_ROCM_USE_AITER": "0"
+      },
+      "precision": {
+        "native": ["bf16", "fp16", "int8"],
+        "emulated": [],
+        "unsupported": ["fp8", "mxfp4", "mxfp6", "nvfp4"],
+        "notes": "RDNA 2 lacks WMMA (wave matrix multiply-accumulate) instructions. llama.cpp flash attention via rocWMMA not available — use -DGGML_HIP_ROCWMMA_FATTN=OFF. vLLM may have incomplete kernel coverage; prefer llama.cpp."
+      },
+      "workarounds": [
+        {"id": "rdna2-hsa-override", "desc": "HSA_OVERRIDE_GFX_VERSION=10.3.0 required on RDNA2."},
+        {"id": "rdna2-no-wmma", "desc": "RDNA2 has no WMMA. llama.cpp needs GGML_HIP_ROCWMMA_FATTN=OFF. Flash attention won't accelerate."}
+      ],
+      "vllm_extra_args": ["--enforce-eager"],
+      "vllm_extra_env": {
+        "VLLM_ROCM_USE_AITER": "0",
+        "HSA_OVERRIDE_GFX_VERSION": "10.3.0"
+      },
+      "vllm_support": "limited",
+      "vllm_note": "vLLM on RDNA2 is experimental — kernel coverage is incomplete. Strongly prefer llama.cpp.",
+      "llama_cpp_build_flags": {
+        "cmake_targets": "gfx1030",
+        "rocwmma_fattn": false
+      }
+    },
+
+    "gfx1200": {
+      "market_name": "Radeon RX 9070 XT",
+      "architecture": "RDNA 4",
+      "vram_gb": 16,
+      "vram_type": "GDDR6",
+      "compute_units": 64,
+      "hsa_override": "12.0.0",
+      "gfx_target": "gfx1200",
+      "env_defaults": {
+        "HSA_OVERRIDE_GFX_VERSION": "12.0.0",
+        "VLLM_ROCM_USE_AITER": "0"
+      },
+      "precision": {
+        "native": ["bf16", "fp16", "fp8", "int8"],
+        "emulated": [],
+        "unsupported": ["mxfp4", "mxfp6", "nvfp4"],
+        "notes": "RDNA 4 adds hardware FP8 support. Check ROCm version for gfx1200 support (requires ROCm 7.3+ or latest)."
+      },
+      "workarounds": [
+        {"id": "rdna4-hsa-override", "desc": "HSA_OVERRIDE_GFX_VERSION may be needed depending on ROCm version."},
+        {"id": "rdna4-no-aiter", "desc": "VLLM_ROCM_USE_AITER=0 mandatory on RDNA."}
+      ],
+      "vllm_extra_args": ["--enforce-eager"],
+      "vllm_extra_env": {
+        "VLLM_ROCM_USE_AITER": "0"
+      },
+      "vllm_support": "full",
+      "llama_cpp_build_flags": {
+        "cmake_targets": "gfx1200",
+        "rocwmma_fattn": true
+      }
+    }
+  },
+
+  "default_gpu": "gfx1100",
+
+  "rdna_families": {
+    "gfx103": {"family": "rdna2", "description": "Radeon RX 6000 series", "wmma": false},
+    "gfx110": {"family": "rdna3", "description": "Radeon RX 7000 series", "wmma": true},
+    "gfx115": {"family": "rdna35", "description": "RDNA 3.5 APUs", "wmma": true},
+    "gfx120": {"family": "rdna4", "description": "Radeon RX 9000 series", "wmma": true}
+  },
+
+  "vram_overhead_gb": {
+    "vllm": 2.5,
+    "llama_cpp": 1.5,
+    "_note": "vLLM overhead covers activations + internal buffers. llama.cpp overhead covers context buffers + scratch. Both empirically tuned for 7B-32B models on 24GB cards."
+  }
+}
