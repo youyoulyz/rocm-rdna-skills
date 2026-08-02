@@ -210,7 +210,36 @@ to end; later phases reuse the same scripts but loosen heuristics in
 |---|---|---|
 | 0 | Ryzen AI APUs (Strix Halo, Strix Point, Krackan, Phoenix, Hawk Point) -- gfx1151 / gfx1150 / gfx1103 / gfx1036 | Validated. Default target. |
 | 1 | Instinct (MI300X, MI300A, MI250, MI210) -- gfx942 / gfx90a | Scripts work; not validated against the full failure list. |
-| 2 | Radeon dGPUs (RDNA3, RDNA4) -- gfx1100, gfx1101, gfx1102, gfx12xx | Scripts work; iGPU/dGPU collision logic specifically targets this case. |
+| 2 | Radeon dGPUs (RDNA3, RDNA4) -- gfx1100, gfx1101, gfx1102, gfx12xx | **Validated on RX 7900 XTX (gfx1100), Aug 2026.** See "RDNA validation findings" below. |
+
+## RDNA validation findings (RX 7900 XTX, ROCm 7.2.4 system + TheRock 7.14 conda env)
+
+Validated `examine.py` + `diagnose.py` end to end on a RDNA3 dGPU host
+and fixed four issues:
+
+1. **rocminfo gfx target lost**: rocminfo agent blocks end with an ISA
+   list whose `Name: amdgcn-amd-amdhsa--gfx1100` lines overwrote the
+   agent's own Name, so `gfx_target` came back empty and every
+   gfx-architecture check in diagnose.py silently no-oped. The parser
+   now ignores `Name:` lines after `Device Type`.
+2. **gfx1100 classified as APU**: the APU regex `gfx11[05]\d` matched
+   the discrete RX 7000 cards (gfx1100/1101/1102). Corrected to
+   `gfx1103|gfx115\d|gfx1031` so RDNA3 dGPUs are `is_apu: false`.
+3. **amdkfd "not loaded" false alarm**: kernels >= 6.10 build amdkfd
+   into the amdgpu module, so `lsmod` never shows it on a healthy
+   system. Now reported as `None` (unknown) when amdgpu is loaded and
+   `/dev/kfd` exists, instead of a hard `false`.
+4. **TheRock virtual-ROCm env misdiagnosed as wheel/ROCm mismatch**:
+   the framework probe preferred the bare system python (a CUDA torch
+   wheel), which triggered fix-8-wheel-rocm at 50/100. The probe now
+   checks conda envs first (rocm7.14 preferred, then torch), records
+   `framework_env` / `framework_therock`, and diagnose's check_8 skips
+   TheRock envs entirely — their ROCm lives in site-packages and
+   intentionally does not match the system ROCm.
+
+Result on the validation machine: only two WEAK matches remain (stale
+apt repo files at 40/100, /opt/rocm/bin not on PATH at 20/100), both
+correct and below the action threshold.
 
 ## Live AMD compatibility matrices
 

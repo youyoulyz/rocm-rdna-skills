@@ -175,6 +175,8 @@ class Examination:
     framework_rocm_version: str = ""    # e.g. PyTorch's torch.version.hip
     framework_arch_list: list[str] = field(default_factory=list)
     framework_notes: list[str] = field(default_factory=list)
+    framework_env: str = ""             # conda env probed, or "" for system python
+    framework_therock: bool = False     # TheRock virtual ROCm (site-packages/_rocm_sdk_core)
 
     # --- environment ---
     env: dict[str, str] = field(default_factory=dict)
@@ -284,6 +286,10 @@ def _probe_cpu(e: Examination) -> None:
 # Strix Halo / Phoenix / Hawk Point / Strix Point marketing names commonly
 # seen in `lspci`. Used to flag the GPU as an APU when rocminfo isn't
 # available.
+# Conda envs probed first for the PyTorch framework probe. rocm7.14 is
+# the TheRock ROCm wheel stack; "torch" is the legacy env.
+_PREFERRED_ENVS = ("rocm7.14", "torch")
+
 _APU_KEYWORDS = (
     "strix halo", "ryzen ai max", "phoenix", "hawk point", "strix point",
     "krackan", "rembrandt", "raphael", "barcelo", "lucienne", "renoir",
@@ -400,7 +406,10 @@ def _probe_gpus_rocminfo(e: Examination) -> None:
             cur_marketing = ""
             cur_is_gpu = False
             continue
-        if s.startswith("Name:"):
+        # Name lines after "Device Type" are the ISA list
+        # (amdgcn-amd-amdhsa--gfx1100 etc.) inside the agent block — they
+        # must not overwrite the agent's own Name.
+        if s.startswith("Name:") and not cur_is_gpu:
             cur_name = s.split(":", 1)[1].strip()
         elif s.startswith("Marketing Name:"):
             cur_marketing = s.split(":", 1)[1].strip()
@@ -420,13 +429,14 @@ def _probe_gpus_rocminfo(e: Examination) -> None:
             amd_entries[idx].gfx_target = gfx
             if marketing and not amd_entries[idx].name:
                 amd_entries[idx].name = marketing
-            # APU classification: gfx115x/gfx110x/gfx103x are APU families
-            # the doctor cares about. The rest are discrete.
-            amd_entries[idx].is_apu = bool(re.match(r"gfx11[05]\d", gfx))
+            # APU classification: only iGPU gfx families are APUs.
+            # gfx1100/1101/1102 are discrete RX 7000 cards; gfx1103 is
+            # the RDNA3 iGPU, gfx115x RDNA 3.5 iGPUs, gfx1031 RDNA2 iGPU.
+            amd_entries[idx].is_apu = bool(re.match(r"gfx1103|gfx115\d|gfx1031", gfx))
         else:
             e.gpus.append(GPU(
                 name=marketing or "AMD GPU", gfx_target=gfx,
-                is_amd=True, is_apu=bool(re.match(r"gfx11[05]\d", gfx)),
+                is_amd=True, is_apu=bool(re.match(r"gfx1103|gfx115\d|gfx1031", gfx)),
             ))
 
 
@@ -455,6 +465,14 @@ def _probe_modules(e: Examination) -> None:
             modules = {line.split()[0] for line in txt.splitlines() if line.split()}
             e.amdgpu_loaded = "amdgpu" in modules
             e.amdkfd_loaded = "amdkfd" in modules
+
+    # Modern kernels (>= 6.10) build amdkfd INTO the amdgpu module, so
+    # "amdkfd" never appears in lsmod on a healthy system. Treat a loaded
+    # amdgpu + present /dev/kfd as kfd available.
+    if e.amdkfd_loaded is False and e.amdgpu_loaded:
+        kfd_present = os.path.exists("/dev/kfd")
+        if kfd_present:
+            e.amdkfd_loaded = None  # unknown-but-available; see kfd probe
 
     # Blacklist files. We don't try to parse every modprobe.d directive
     # perfectly; we just flag any file that contains a literal "blacklist
@@ -654,26 +672,70 @@ _PYTORCH_PROBE = (
 
 
 def _probe_pytorch(e: Examination) -> None:
-    """Try to introspect PyTorch in the user's default python."""
-    py = sys.executable or shutil.which("python") or shutil.which("python3")
-    if not py:
-        e.framework_notes.append("No python interpreter found to probe torch.")
-        return
-    rc, out, err = _run([py, "-c", _PYTORCH_PROBE], timeout=20)
-    if rc != 0 or not out.strip():
-        # Try `python3` explicitly in case `sys.executable` is uv's own env
-        # and the user's torch lives elsewhere.
-        py2 = shutil.which("python3")
-        if py2 and py2 != py:
-            rc, out, err = _run([py2, "-c", _PYTORCH_PROBE], timeout=20)
-    if not out.strip():
+    """Try to introspect PyTorch, preferring conda envs over the bare
+    system python.
+
+    On RDNA machines the ROCm torch typically lives in a conda env (e.g.
+    rocm7.14 / torch); the bare system python often holds a CUDA wheel
+    that would mislead the diagnosis into fix-8-wheel-rocm. Conda envs
+    are probed in preference order first, then the system python.
+    """
+    probe = None
+    rc_env, envs_out, _ = _run(["conda", "env", "list"], timeout=10)
+    if rc_env == 0:
+        env_paths: dict[str, str] = {}
+        for line in envs_out.splitlines():
+            parts = line.split()
+            if parts and parts[0] and len(parts) >= 2:
+                env_paths.setdefault(parts[0], parts[-1])
+        preferred = [n for n in _PREFERRED_ENVS if n in env_paths]
+        for name in preferred + [n for n in env_paths if n not in preferred]:
+            rc, out, _ = _run(
+                ["conda", "run", "-n", name, "python", "-c", _PYTORCH_PROBE],
+                timeout=30,
+            )
+            if rc == 0 and out.strip():
+                probe = (name, out)
+                # TheRock virtual ROCm marker: _rocm_sdk_core ships in the
+                # env's site-packages when torch pulled the TheRock SDK.
+                import glob as _glob
+                marker = _glob.glob(
+                    os.path.join(env_paths[name], "lib", "python*",
+                                 "site-packages", "_rocm_sdk_core")
+                )
+                if marker:
+                    e.framework_therock = True
+                break
+    if not probe:
+        py = sys.executable or shutil.which("python") or shutil.which("python3")
+        if not py:
+            e.framework_notes.append("No python interpreter found to probe torch.")
+            return
+        rc, out, err = _run([py, "-c", _PYTORCH_PROBE], timeout=20)
+        if rc != 0 or not out.strip():
+            # Try `python3` explicitly in case `sys.executable` is uv's own
+            # env and the user's torch lives elsewhere.
+            py2 = shutil.which("python3")
+            if py2 and py2 != py:
+                rc, out, err = _run([py2, "-c", _PYTORCH_PROBE], timeout=20)
+        if out.strip():
+            probe = ("system", out)
+
+    if not probe:
         e.framework_notes.append(
             "Could not import torch; if PyTorch is in a venv, activate it "
             "and re-run examine.py inside that venv."
         )
-        if err:
-            e.framework_notes.append(f"python stderr: {err.strip().splitlines()[-1][:200]}")
-        return
+    env_name, out = probe
+    if env_name != "system":
+        e.framework_env = env_name
+        e.framework_notes.append(f"PyTorch probed in conda env '{env_name}'.")
+        if e.framework_therock:
+            e.framework_notes.append(
+                "This env is a TheRock virtual-ROCm stack (site-packages/"
+                "_rocm_sdk_core) — it carries its own ROCm and does not need "
+                "to match the system ROCm version."
+            )
     try:
         data = json.loads(out.strip())
     except json.JSONDecodeError:

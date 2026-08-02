@@ -679,7 +679,23 @@ def check_7_stale_repos(exam: dict, symptom: str) -> Diagnosis:
 
 
 def check_8_wheel_rocm_mismatch(exam: dict, symptom: str) -> Diagnosis:
-    """Framework wheel built for a different ROCm major than the system."""
+    """Framework wheel built for a different ROCm major than the system.
+
+    Skipped for TheRock virtual-ROCm envs: they carry their own ROCm in
+    site-packages and are intentionally independent of the system ROCm
+    (e.g. torch 2.11+rocm7.14 in a conda env on a machine with system
+    ROCm 7.2 — that is a healthy setup, not a mismatch).
+    """
+    if _g(exam, "framework_therock", default=False):
+        return Diagnosis(
+            id="fix-8-wheel-rocm",
+            title="Wheel/ROCm mismatch (TheRock)",
+            score=0,
+            evidence=[
+                "Framework is a TheRock virtual-ROCm stack; it carries its "
+                "own ROCm and does not need to match the system ROCm."
+            ],
+        )
     score = 0
     evidence: list[str] = []
     os_family = _g(exam, "os_family", default="linux")
